@@ -21,6 +21,9 @@ export class GameScene extends Phaser.Scene {
   private fireButton!: Phaser.GameObjects.Arc;
   private dockButton!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
+  private stationLocator!: Phaser.GameObjects.Container;
+  private stationLocatorArrow!: Phaser.GameObjects.Text;
+  private stationLocatorLabel!: Phaser.GameObjects.Text;
   private stationPanel?: Phaser.GameObjects.Container;
 
   private orange = 0;
@@ -38,6 +41,7 @@ export class GameScene extends Phaser.Scene {
   private readonly joystickDeadZone = 0.08;
   private readonly boostThreshold = 0.82;
   private readonly boostMultiplier = 1.75;
+  private readonly locatorEdgeMargin = 58;
 
   constructor() {
     super('GameScene');
@@ -83,6 +87,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.stationPanel) {
       this.player.setVelocity(0, 0);
+      this.stationLocator.setVisible(false);
       return;
     }
 
@@ -113,6 +118,7 @@ export class GameScene extends Phaser.Scene {
 
     this.updateEnemies();
     this.updateDockPrompt();
+    this.updateStationLocator();
 
     this.spawnTimer -= delta;
     if (this.spawnTimer <= 0 && this.enemies.countActive(true) < 18) {
@@ -145,6 +151,22 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1000).setVisible(false).setInteractive();
 
     this.dockButton.on('pointerdown', () => this.openStation());
+
+    const locatorBg = this.add.rectangle(0, 0, 116, 54, 0x071321, 0.82)
+      .setStrokeStyle(2, 0x59d7ff, 0.8);
+
+    this.stationLocatorArrow = this.add.text(0, -8, '▲', {
+      fontFamily: 'Arial', fontSize: '25px', color: '#8ffcff', fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    this.stationLocatorLabel = this.add.text(0, 14, 'BASE', {
+      fontFamily: 'Arial', fontSize: '13px', color: '#ffffff', fontStyle: 'bold', align: 'center'
+    }).setOrigin(0.5);
+
+    this.stationLocator = this.add.container(this.scale.width / 2, 70, [locatorBg, this.stationLocatorArrow, this.stationLocatorLabel])
+      .setScrollFactor(0)
+      .setDepth(1100)
+      .setVisible(false);
   }
 
   private createTouchControls(): void {
@@ -314,6 +336,57 @@ export class GameScene extends Phaser.Scene {
   private updateDockPrompt(): void {
     const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.station.x, this.station.y);
     this.dockButton.setVisible(distance < 185);
+  }
+
+  private updateStationLocator(): void {
+    const camera = this.cameras.main;
+    const view = camera.worldView;
+    const stationIsOnScreen = view.contains(this.station.x, this.station.y);
+
+    if (stationIsOnScreen) {
+      this.stationLocator.setVisible(false);
+      return;
+    }
+
+    const direction = new Phaser.Math.Vector2(
+      this.station.x - this.player.x,
+      this.station.y - this.player.y
+    );
+
+    const distance = direction.length();
+    if (distance <= 0.001) {
+      this.stationLocator.setVisible(false);
+      return;
+    }
+
+    direction.normalize();
+
+    const centerX = this.scale.width / 2;
+    const centerY = this.scale.height / 2;
+    const maxX = Math.max(40, centerX - this.locatorEdgeMargin);
+    const maxY = Math.max(40, centerY - this.locatorEdgeMargin);
+
+    // Intersect the direction ray with the safe HUD rectangle so the locator
+    // always hugs the screen edge without disappearing behind the bezel.
+    const scaleToEdge = Math.min(
+      Math.abs(direction.x) > 0.001 ? maxX / Math.abs(direction.x) : Number.POSITIVE_INFINITY,
+      Math.abs(direction.y) > 0.001 ? maxY / Math.abs(direction.y) : Number.POSITIVE_INFINITY
+    );
+
+    this.stationLocator.setPosition(
+      centerX + direction.x * scaleToEdge,
+      centerY + direction.y * scaleToEdge
+    );
+
+    // The arrow glyph points upward at zero rotation.
+    this.stationLocatorArrow.setRotation(direction.angle() + Math.PI / 2);
+    this.stationLocatorLabel.setText(`BASE\n${this.formatNavigationDistance(distance)}`);
+    this.stationLocator.setVisible(true);
+  }
+
+  private formatNavigationDistance(distance: number): string {
+    if (distance >= 1000) return `${(distance / 1000).toFixed(1)} km`;
+    return `${Math.round(distance)} m`;
   }
 
   private openStation(): void {
