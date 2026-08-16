@@ -16,16 +16,24 @@ export class BootScene extends Phaser.Scene {
 
   private makeShipTexture(): void {
     const g = this.add.graphics();
+
+    // Keep the visible ship centred around the texture origin. The previous
+    // geometry extended into negative texture coordinates, which made the
+    // sprite appear offset from its physics/world position.
+    const cx = 32;
+    const cy = 20;
+
     g.fillStyle(0x66d9ff, 1);
     g.lineStyle(3, 0xffffff, 1);
     g.beginPath();
-    g.moveTo(30, 0);
-    g.lineTo(-22, -16);
-    g.lineTo(-12, 0);
-    g.lineTo(-22, 16);
+    g.moveTo(cx + 26, cy);
+    g.lineTo(cx - 22, cy - 16);
+    g.lineTo(cx - 12, cy);
+    g.lineTo(cx - 22, cy + 16);
     g.closePath();
     g.fillPath();
     g.strokePath();
+
     g.generateTexture('player-ship', 64, 40);
     g.destroy();
   }
