@@ -49,7 +49,7 @@ export class GameScene extends Phaser.Scene {
 
     this.station = this.physics.add.image(this.worldSize / 2, this.worldSize / 2, 'station');
     this.station.setImmovable(true);
-    this.station.body.setCircle(80, 10, 10);
+    (this.station.body as Phaser.Physics.Arcade.Body).setCircle(80, 10, 10);
 
     this.player = this.physics.add.image(this.worldSize / 2 + 420, this.worldSize / 2, 'player-ship');
     this.player.setCollideWorldBounds(true);
@@ -61,12 +61,11 @@ export class GameScene extends Phaser.Scene {
     this.bullets = this.physics.add.group({ maxSize: 80 });
     this.pickups = this.physics.add.group();
 
-    this.physics.add.overlap(this.bullets, this.enemies, this.onBulletEnemy, undefined, this);
-    this.physics.add.overlap(this.player, this.enemies, this.onPlayerEnemy, undefined, this);
-    this.physics.add.overlap(this.player, this.pickups, this.onPickup, undefined, this);
+    this.physics.add.overlap(this.bullets, this.enemies, this.onBulletEnemy as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
+    this.physics.add.overlap(this.player, this.enemies, this.onPlayerEnemy as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
+    this.physics.add.overlap(this.player, this.pickups, this.onPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
 
     this.cameras.main.startFollow(this.player, true, 0.09, 0.09);
-    this.cameras.main.setZoom(1);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.fireKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -99,7 +98,7 @@ export class GameScene extends Phaser.Scene {
     const wantsFire = this.fireKey.isDown || this.fireButton.getData('pressed') === true;
     if (wantsFire) this.tryFire(time);
 
-    this.updateEnemies(delta);
+    this.updateEnemies();
     this.updateDockPrompt();
 
     this.spawnTimer -= delta;
@@ -115,37 +114,21 @@ export class GameScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(0xffffff, 0.72);
     for (let i = 0; i < 900; i += 1) {
-      g.fillCircle(
-        Phaser.Math.Between(0, this.worldSize),
-        Phaser.Math.Between(0, this.worldSize),
-        Phaser.Math.Between(1, 2)
-      );
+      g.fillCircle(Phaser.Math.Between(0, this.worldSize), Phaser.Math.Between(0, this.worldSize), Phaser.Math.Between(1, 2));
     }
     g.fillStyle(0x3355aa, 0.2);
     for (let i = 0; i < 80; i += 1) {
-      g.fillCircle(
-        Phaser.Math.Between(0, this.worldSize),
-        Phaser.Math.Between(0, this.worldSize),
-        Phaser.Math.Between(2, 4)
-      );
+      g.fillCircle(Phaser.Math.Between(0, this.worldSize), Phaser.Math.Between(0, this.worldSize), Phaser.Math.Between(2, 4));
     }
   }
 
   private createHud(): void {
     this.hudText = this.add.text(16, 14, '', {
-      fontFamily: 'Arial',
-      fontSize: '17px',
-      color: '#ffffff',
-      backgroundColor: 'rgba(0,0,0,0.35)',
-      padding: { x: 10, y: 8 }
+      fontFamily: 'Arial', fontSize: '17px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.35)', padding: { x: 10, y: 8 }
     }).setScrollFactor(0).setDepth(1000);
 
     this.dockButton = this.add.text(this.scale.width / 2, this.scale.height - 118, 'DOCK', {
-      fontFamily: 'Arial',
-      fontSize: '22px',
-      color: '#8ffcff',
-      backgroundColor: '#133a47',
-      padding: { x: 22, y: 12 }
+      fontFamily: 'Arial', fontSize: '22px', color: '#8ffcff', backgroundColor: '#133a47', padding: { x: 22, y: 12 }
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1000).setVisible(false).setInteractive();
 
     this.dockButton.on('pointerdown', () => this.openStation());
@@ -153,24 +136,20 @@ export class GameScene extends Phaser.Scene {
 
   private createTouchControls(): void {
     const y = this.scale.height - 105;
-    this.joystickBase = this.add.circle(105, y, 62, 0x20304d, 0.5)
-      .setScrollFactor(0).setDepth(1000);
-    this.joystickKnob = this.add.circle(105, y, 30, 0x66d9ff, 0.7)
-      .setScrollFactor(0).setDepth(1001);
+    this.joystickBase = this.add.circle(105, y, 62, 0x20304d, 0.5).setScrollFactor(0).setDepth(1000);
+    this.joystickKnob = this.add.circle(105, y, 30, 0x66d9ff, 0.7).setScrollFactor(0).setDepth(1001);
 
-    this.fireButton = this.add.circle(this.scale.width - 88, y, 48, 0xff7a18, 0.72)
-      .setScrollFactor(0).setDepth(1000).setInteractive();
+    this.fireButton = this.add.circle(this.scale.width - 88, y, 48, 0xff7a18, 0.72).setScrollFactor(0).setDepth(1000).setInteractive();
     this.add.text(this.fireButton.x, this.fireButton.y, 'FIRE', {
       fontFamily: 'Arial', fontSize: '16px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1001);
 
-    this.boostButton = this.add.circle(this.scale.width - 190, y + 18, 38, 0x2358b8, 0.72)
-      .setScrollFactor(0).setDepth(1000).setInteractive();
+    this.boostButton = this.add.circle(this.scale.width - 190, y + 18, 38, 0x2358b8, 0.72).setScrollFactor(0).setDepth(1000).setInteractive();
     this.add.text(this.boostButton.x, this.boostButton.y, 'BOOST', {
       fontFamily: 'Arial', fontSize: '12px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1001);
 
-    const bindHold = (obj: Phaser.GameObjects.Arc) => {
+    const bindHold = (obj: Phaser.GameObjects.Arc): void => {
       obj.setData('pressed', false);
       obj.on('pointerdown', () => obj.setData('pressed', true));
       obj.on('pointerup', () => obj.setData('pressed', false));
@@ -182,8 +161,7 @@ export class GameScene extends Phaser.Scene {
 
   private bindPointerInput(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x > this.scale.width * 0.48 || pointer.y < this.scale.height * 0.55) return;
-      if (this.joystickPointerId !== null) return;
+      if (pointer.x > this.scale.width * 0.48 || pointer.y < this.scale.height * 0.55 || this.joystickPointerId !== null) return;
       this.joystickPointerId = pointer.id;
       this.joystickOrigin.set(pointer.x, pointer.y);
       this.joystickBase.setPosition(pointer.x, pointer.y);
@@ -193,21 +171,20 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (pointer.id !== this.joystickPointerId) return;
-      const dx = pointer.x - this.joystickOrigin.x;
-      const dy = pointer.y - this.joystickOrigin.y;
-      const v = new Phaser.Math.Vector2(dx, dy);
+      const v = new Phaser.Math.Vector2(pointer.x - this.joystickOrigin.x, pointer.y - this.joystickOrigin.y);
       if (v.length() > 58) v.setLength(58);
       this.joystickKnob.setPosition(this.joystickOrigin.x + v.x, this.joystickOrigin.y + v.y);
       this.joystickVector.copy(v).scale(1 / 58);
     });
 
-    const release = (pointer: Phaser.Input.Pointer) => {
+    const release = (pointer: Phaser.Input.Pointer): void => {
       if (pointer.id !== this.joystickPointerId) return;
       this.joystickPointerId = null;
       this.joystickVector.set(0, 0);
       this.joystickBase.setPosition(105, this.scale.height - 105);
       this.joystickKnob.setPosition(105, this.scale.height - 105);
     };
+
     this.input.on('pointerup', release);
     this.input.on('pointerupoutside', release);
   }
@@ -229,16 +206,16 @@ export class GameScene extends Phaser.Scene {
 
     const bullet = this.bullets.get(this.player.x, this.player.y, 'bullet') as Phaser.Physics.Arcade.Image | null;
     if (!bullet) return;
+
+    const body = bullet.body as Phaser.Physics.Arcade.Body;
     bullet.setActive(true).setVisible(true).setRotation(this.facing.angle());
-    bullet.body.enable = true;
+    body.enable = true;
     bullet.setVelocity(this.facing.x * 720, this.facing.y * 720);
-    bullet.setData('bornAt', time);
 
     this.time.delayedCall(1100, () => {
-      if (bullet.active) {
-        bullet.setActive(false).setVisible(false);
-        bullet.body.enable = false;
-      }
+      if (!bullet.active) return;
+      bullet.setActive(false).setVisible(false);
+      (bullet.body as Phaser.Physics.Arcade.Body).enable = false;
     });
   }
 
@@ -253,7 +230,7 @@ export class GameScene extends Phaser.Scene {
     enemy.setDepth(8);
   }
 
-  private updateEnemies(_delta: number): void {
+  private updateEnemies(): void {
     this.enemies.children.each((child) => {
       const enemy = child as Phaser.Physics.Arcade.Image;
       if (!enemy.active) return true;
@@ -264,24 +241,18 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private onBulletEnemy(
-    bulletObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    enemyObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
-  ): void {
+  private onBulletEnemy = (bulletObj: unknown, enemyObj: unknown): void => {
     const bullet = bulletObj as Phaser.Physics.Arcade.Image;
     const enemy = enemyObj as Phaser.Physics.Arcade.Image;
     bullet.setActive(false).setVisible(false);
-    bullet.body.enable = false;
+    (bullet.body as Phaser.Physics.Arcade.Body).enable = false;
 
     const hp = (enemy.getData('hp') as number) - 1;
     enemy.setData('hp', hp);
     if (hp <= 0) this.destroyEnemy(enemy);
-  }
+  };
 
-  private onPlayerEnemy(
-    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    enemyObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
-  ): void {
+  private onPlayerEnemy = (_playerObj: unknown, enemyObj: unknown): void => {
     const enemy = enemyObj as Phaser.Physics.Arcade.Image;
     if (this.isBoosting) {
       this.destroyEnemy(enemy);
@@ -291,7 +262,7 @@ export class GameScene extends Phaser.Scene {
     const push = new Phaser.Math.Vector2(this.player.x - enemy.x, this.player.y - enemy.y).normalize();
     this.player.setVelocity(push.x * 360, push.y * 360);
     enemy.setVelocity(-push.x * 180, -push.y * 180);
-  }
+  };
 
   private destroyEnemy(enemy: Phaser.Physics.Arcade.Image): void {
     const type: ResourceType = Math.random() < 0.55 ? 'orange' : 'blue';
@@ -301,16 +272,13 @@ export class GameScene extends Phaser.Scene {
     enemy.destroy();
   }
 
-  private onPickup(
-    _playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
-    pickupObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
-  ): void {
+  private onPickup = (_playerObj: unknown, pickupObj: unknown): void => {
     const pickup = pickupObj as Phaser.Physics.Arcade.Image;
     const type = pickup.getData('resourceType') as ResourceType;
     if (type === 'orange') this.orange += 1;
     else this.blue += 1;
     pickup.destroy();
-  }
+  };
 
   private updateDockPrompt(): void {
     const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.station.x, this.station.y);
@@ -329,7 +297,6 @@ export class GameScene extends Phaser.Scene {
     const title = this.add.text(0, -h / 2 + 44, 'SPACE STATION', {
       fontFamily: 'Arial', fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
-
     const resource = this.add.text(0, -h / 2 + 92, '', {
       fontFamily: 'Arial', fontSize: '17px', color: '#8ffcff'
     }).setOrigin(0.5);
@@ -340,7 +307,7 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'Arial', fontSize: '20px', color: '#ffffff', backgroundColor: '#33394d', padding: { x: 24, y: 12 }
     }).setOrigin(0.5).setInteractive();
 
-    const refresh = () => {
+    const refresh = (): void => {
       const thrustCost = 5 + this.thrustLevel * 4;
       const fireCost = 5 + this.fireRateLevel * 4;
       resource.setText(`Orange: ${this.orange}     Blue: ${this.blue}`);
@@ -374,8 +341,7 @@ export class GameScene extends Phaser.Scene {
       this.stationPanel = undefined;
     });
 
-    this.stationPanel = this.add.container(x, y, [bg, title, resource, thrust, fireRate, close])
-      .setScrollFactor(0).setDepth(2000);
+    this.stationPanel = this.add.container(x, y, [bg, title, resource, thrust, fireRate, close]).setScrollFactor(0).setDepth(2000);
     refresh();
   }
 
