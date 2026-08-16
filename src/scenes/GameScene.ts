@@ -36,12 +36,15 @@ export class GameScene extends Phaser.Scene {
   private isBoosting = false;
 
   private readonly worldSize = 4200;
-  private readonly baseSpeed = 220;
+  private readonly baseAcceleration = 520;
+  private readonly baseMaxSpeed = 220;
+  private readonly passiveDrag = 18;
   private readonly joystickRadius = 72;
   private readonly joystickDeadZone = 0.08;
   private readonly boostThreshold = 0.82;
   private readonly boostMultiplier = 1.75;
   private readonly locatorEdgeMargin = 58;
+  private readonly projectileSpeed = 720;
 
   constructor() {
     super('GameScene');
@@ -60,8 +63,8 @@ export class GameScene extends Phaser.Scene {
 
     this.player = this.physics.add.image(this.worldSize / 2 + 420, this.worldSize / 2, 'player-ship');
     this.player.setCollideWorldBounds(true);
-    this.player.setDrag(500, 500);
-    this.player.setMaxVelocity(600);
+    this.player.setDrag(this.passiveDrag, this.passiveDrag);
+    this.player.setMaxVelocity(this.baseMaxSpeed * this.boostMultiplier);
     this.player.setDepth(10);
 
     this.enemies = this.physics.add.group();
@@ -86,6 +89,7 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.stationPanel) {
+      this.player.setAcceleration(0, 0);
       this.player.setVelocity(0, 0);
       this.stationLocator.setVisible(false);
       return;
@@ -95,21 +99,13 @@ export class GameScene extends Phaser.Scene {
     const inputStrength = Phaser.Math.Clamp(movement.length(), 0, 1);
     this.isBoosting = inputStrength >= this.boostThreshold;
 
-    const thrustSpeed = this.baseSpeed + this.thrustLevel * 28;
-    const boostFactor = this.isBoosting ? this.boostMultiplier : 1;
-
-    // Movement remains analog: the joystick distance from center directly controls speed.
-    this.player.setVelocity(
-      movement.x * thrustSpeed * boostFactor,
-      movement.y * thrustSpeed * boostFactor
-    );
+    this.updatePlayerThrust(movement, inputStrength);
 
     if (inputStrength > this.joystickDeadZone) {
       this.facing.copy(movement).normalize();
       this.player.setRotation(this.facing.angle());
     }
 
-    // Give immediate visual feedback when the stick enters the boost band.
     this.joystickBoostRing.setStrokeStyle(4, this.isBoosting ? 0x59d7ff : 0x28436a, this.isBoosting ? 0.95 : 0.45);
     this.joystickKnob.setFillStyle(this.isBoosting ? 0x8eeaff : 0x66d9ff, this.isBoosting ? 0.95 : 0.78);
 
@@ -127,6 +123,32 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.updateHud();
+  }
+
+  private updatePlayerThrust(movement: Phaser.Math.Vector2, inputStrength: number): void {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const thrustAcceleration = this.baseAcceleration + this.thrustLevel * 42;
+    const normalMaxSpeed = this.baseMaxSpeed + this.thrustLevel * 28;
+    const maxSpeed = normalMaxSpeed * (this.isBoosting ? this.boostMultiplier : 1);
+
+    body.setMaxVelocity(maxSpeed, maxSpeed);
+
+    if (inputStrength <= this.joystickDeadZone) {
+      // No input means no thrust. Existing velocity is preserved and only the
+      // small passive drag bleeds speed away gradually, giving the ship drift.
+      this.player.setAcceleration(0, 0);
+      this.player.setDrag(this.passiveDrag, this.passiveDrag);
+      return;
+    }
+
+    const direction = movement.clone().normalize();
+    const thrustStrength = inputStrength * (this.isBoosting ? this.boostMultiplier : 1);
+
+    this.player.setDrag(0, 0);
+    this.player.setAcceleration(
+      direction.x * thrustAcceleration * thrustStrength,
+      direction.y * thrustAcceleration * thrustStrength
+    );
   }
 
   private createStarfield(): void {
@@ -257,13 +279,25 @@ export class GameScene extends Phaser.Scene {
     if (time < this.nextShotAt) return;
     this.nextShotAt = time + fireDelay;
 
+    // The projectile starts exactly on the player's world-space centre. The
+    // ship texture is also centred on that same origin, so the shot visually
+    // emerges from the middle of the ship before travelling along its facing.
     const bullet = this.bullets.get(this.player.x, this.player.y, 'bullet') as Phaser.Physics.Arcade.Image | null;
     if (!bullet) return;
 
     const body = bullet.body as Phaser.Physics.Arcade.Body;
+    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
+
+    bullet.setPosition(this.player.x, this.player.y);
     bullet.setActive(true).setVisible(true).setRotation(this.facing.angle());
     body.enable = true;
-    bullet.setVelocity(this.facing.x * 720, this.facing.y * 720);
+
+    // Inherit the ship's current drift so firing while travelling does not
+    // make the projectile appear to slide sideways away from the ship.
+    bullet.setVelocity(
+      this.facing.x * this.projectileSpeed + playerBody.velocity.x,
+      this.facing.y * this.projectileSpeed + playerBody.velocity.y
+    );
 
     this.time.delayedCall(1100, () => {
       if (!bullet.active) return;
@@ -366,8 +400,6 @@ export class GameScene extends Phaser.Scene {
     const maxX = Math.max(40, centerX - this.locatorEdgeMargin);
     const maxY = Math.max(40, centerY - this.locatorEdgeMargin);
 
-    // Intersect the direction ray with the safe HUD rectangle so the locator
-    // always hugs the screen edge without disappearing behind the bezel.
     const scaleToEdge = Math.min(
       Math.abs(direction.x) > 0.001 ? maxX / Math.abs(direction.x) : Number.POSITIVE_INFINITY,
       Math.abs(direction.y) > 0.001 ? maxY / Math.abs(direction.y) : Number.POSITIVE_INFINITY
@@ -378,7 +410,6 @@ export class GameScene extends Phaser.Scene {
       centerY + direction.y * scaleToEdge
     );
 
-    // The arrow glyph points upward at zero rotation.
     this.stationLocatorArrow.setRotation(direction.angle() + Math.PI / 2);
     this.stationLocatorLabel.setText(`BASE\n${this.formatNavigationDistance(distance)}`);
     this.stationLocator.setVisible(true);
