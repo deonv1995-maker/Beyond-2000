@@ -1,0 +1,66 @@
+name: Build Beyond 2000 Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'vite.config.ts'
+      - 'capacitor.config.ts'
+      - '.github/workflows/build-android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install web dependencies
+        run: npm install
+
+      - name: Build web game for Android
+        run: CAPACITOR_BUILD=true npm run build
+
+      - name: Create Capacitor Android project
+        run: npx cap add android
+
+      - name: Sync game into Android project
+        run: npx cap sync android
+
+      - name: Ensure Android SDK 36 is available
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Build installable debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Beyond 2000 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Beyond-2000-Android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
