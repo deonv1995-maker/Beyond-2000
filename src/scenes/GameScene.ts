@@ -10,16 +10,15 @@ export class GameScene extends Phaser.Scene {
   private station!: Phaser.Physics.Arcade.Image;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private fireKey!: Phaser.Input.Keyboard.Key;
-  private boostKey!: Phaser.Input.Keyboard.Key;
 
   private joystickPointerId: number | null = null;
   private joystickOrigin = new Phaser.Math.Vector2();
   private joystickVector = new Phaser.Math.Vector2();
   private joystickBase!: Phaser.GameObjects.Arc;
+  private joystickBoostRing!: Phaser.GameObjects.Arc;
   private joystickKnob!: Phaser.GameObjects.Arc;
 
   private fireButton!: Phaser.GameObjects.Arc;
-  private boostButton!: Phaser.GameObjects.Arc;
   private dockButton!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
   private stationPanel?: Phaser.GameObjects.Container;
@@ -35,6 +34,10 @@ export class GameScene extends Phaser.Scene {
 
   private readonly worldSize = 4200;
   private readonly baseSpeed = 220;
+  private readonly joystickRadius = 72;
+  private readonly joystickDeadZone = 0.08;
+  private readonly boostThreshold = 0.82;
+  private readonly boostMultiplier = 1.75;
 
   constructor() {
     super('GameScene');
@@ -54,7 +57,7 @@ export class GameScene extends Phaser.Scene {
     this.player = this.physics.add.image(this.worldSize / 2 + 420, this.worldSize / 2, 'player-ship');
     this.player.setCollideWorldBounds(true);
     this.player.setDrag(500, 500);
-    this.player.setMaxVelocity(450);
+    this.player.setMaxVelocity(600);
     this.player.setDepth(10);
 
     this.enemies = this.physics.add.group();
@@ -69,7 +72,6 @@ export class GameScene extends Phaser.Scene {
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.fireKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.boostKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
 
     this.createHud();
     this.createTouchControls();
@@ -85,15 +87,26 @@ export class GameScene extends Phaser.Scene {
     }
 
     const movement = this.readMovementInput();
-    this.isBoosting = this.boostKey.isDown || this.boostButton.getData('pressed') === true;
+    const inputStrength = Phaser.Math.Clamp(movement.length(), 0, 1);
+    this.isBoosting = inputStrength >= this.boostThreshold;
 
-    const speed = (this.baseSpeed + this.thrustLevel * 28) * (this.isBoosting ? 1.75 : 1);
-    this.player.setVelocity(movement.x * speed, movement.y * speed);
+    const thrustSpeed = this.baseSpeed + this.thrustLevel * 28;
+    const boostFactor = this.isBoosting ? this.boostMultiplier : 1;
 
-    if (movement.lengthSq() > 0.01) {
+    // Movement remains analog: the joystick distance from center directly controls speed.
+    this.player.setVelocity(
+      movement.x * thrustSpeed * boostFactor,
+      movement.y * thrustSpeed * boostFactor
+    );
+
+    if (inputStrength > this.joystickDeadZone) {
       this.facing.copy(movement).normalize();
       this.player.setRotation(this.facing.angle());
     }
+
+    // Give immediate visual feedback when the stick enters the boost band.
+    this.joystickBoostRing.setStrokeStyle(4, this.isBoosting ? 0x59d7ff : 0x28436a, this.isBoosting ? 0.95 : 0.45);
+    this.joystickKnob.setFillStyle(this.isBoosting ? 0x8eeaff : 0x66d9ff, this.isBoosting ? 0.95 : 0.78);
 
     const wantsFire = this.fireKey.isDown || this.fireButton.getData('pressed') === true;
     if (wantsFire) this.tryFire(time);
@@ -135,54 +148,70 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTouchControls(): void {
-    const y = this.scale.height - 105;
-    this.joystickBase = this.add.circle(105, y, 62, 0x20304d, 0.5).setScrollFactor(0).setDepth(1000);
-    this.joystickKnob = this.add.circle(105, y, 30, 0x66d9ff, 0.7).setScrollFactor(0).setDepth(1001);
+    const x = 112;
+    const y = this.scale.height - 112;
 
-    this.fireButton = this.add.circle(this.scale.width - 88, y, 48, 0xff7a18, 0.72).setScrollFactor(0).setDepth(1000).setInteractive();
+    this.joystickBase = this.add.circle(x, y, this.joystickRadius, 0x20304d, 0.42)
+      .setScrollFactor(0).setDepth(1000);
+
+    this.joystickBoostRing = this.add.circle(x, y, this.joystickRadius * this.boostThreshold)
+      .setStrokeStyle(4, 0x28436a, 0.45)
+      .setScrollFactor(0).setDepth(1001);
+
+    this.joystickKnob = this.add.circle(x, y, 30, 0x66d9ff, 0.78)
+      .setScrollFactor(0).setDepth(1002);
+
+    this.fireButton = this.add.circle(this.scale.width - 88, y, 48, 0xff7a18, 0.72)
+      .setScrollFactor(0).setDepth(1000).setInteractive();
+
     this.add.text(this.fireButton.x, this.fireButton.y, 'FIRE', {
       fontFamily: 'Arial', fontSize: '16px', color: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1001);
 
-    this.boostButton = this.add.circle(this.scale.width - 190, y + 18, 38, 0x2358b8, 0.72).setScrollFactor(0).setDepth(1000).setInteractive();
-    this.add.text(this.boostButton.x, this.boostButton.y, 'BOOST', {
-      fontFamily: 'Arial', fontSize: '12px', color: '#ffffff', fontStyle: 'bold'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1001);
-
-    const bindHold = (obj: Phaser.GameObjects.Arc): void => {
-      obj.setData('pressed', false);
-      obj.on('pointerdown', () => obj.setData('pressed', true));
-      obj.on('pointerup', () => obj.setData('pressed', false));
-      obj.on('pointerout', () => obj.setData('pressed', false));
-    };
-    bindHold(this.fireButton);
-    bindHold(this.boostButton);
+    this.fireButton.setData('pressed', false);
+    this.fireButton.on('pointerdown', () => this.fireButton.setData('pressed', true));
+    this.fireButton.on('pointerup', () => this.fireButton.setData('pressed', false));
+    this.fireButton.on('pointerout', () => this.fireButton.setData('pressed', false));
   }
 
   private bindPointerInput(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x > this.scale.width * 0.48 || pointer.y < this.scale.height * 0.55 || this.joystickPointerId !== null) return;
+      if (pointer.x > this.scale.width * 0.52 || pointer.y < this.scale.height * 0.5 || this.joystickPointerId !== null) return;
+
       this.joystickPointerId = pointer.id;
       this.joystickOrigin.set(pointer.x, pointer.y);
       this.joystickBase.setPosition(pointer.x, pointer.y);
+      this.joystickBoostRing.setPosition(pointer.x, pointer.y);
       this.joystickKnob.setPosition(pointer.x, pointer.y);
       this.joystickVector.set(0, 0);
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (pointer.id !== this.joystickPointerId) return;
+
       const v = new Phaser.Math.Vector2(pointer.x - this.joystickOrigin.x, pointer.y - this.joystickOrigin.y);
-      if (v.length() > 58) v.setLength(58);
+      if (v.length() > this.joystickRadius) v.setLength(this.joystickRadius);
+
       this.joystickKnob.setPosition(this.joystickOrigin.x + v.x, this.joystickOrigin.y + v.y);
-      this.joystickVector.copy(v).scale(1 / 58);
+      this.joystickVector.copy(v).scale(1 / this.joystickRadius);
+
+      if (this.joystickVector.length() < this.joystickDeadZone) {
+        this.joystickVector.set(0, 0);
+      }
     });
 
     const release = (pointer: Phaser.Input.Pointer): void => {
       if (pointer.id !== this.joystickPointerId) return;
+
       this.joystickPointerId = null;
       this.joystickVector.set(0, 0);
-      this.joystickBase.setPosition(105, this.scale.height - 105);
-      this.joystickKnob.setPosition(105, this.scale.height - 105);
+      this.isBoosting = false;
+
+      const restX = 112;
+      const restY = this.scale.height - 112;
+      this.joystickBase.setPosition(restX, restY);
+      this.joystickBoostRing.setPosition(restX, restY);
+      this.joystickKnob.setPosition(restX, restY);
     };
 
     this.input.on('pointerup', release);
@@ -191,10 +220,12 @@ export class GameScene extends Phaser.Scene {
 
   private readMovementInput(): Phaser.Math.Vector2 {
     const v = new Phaser.Math.Vector2(this.joystickVector.x, this.joystickVector.y);
+
     if (this.cursors.left.isDown) v.x -= 1;
     if (this.cursors.right.isDown) v.x += 1;
     if (this.cursors.up.isDown) v.y -= 1;
     if (this.cursors.down.isDown) v.y += 1;
+
     if (v.lengthSq() > 1) v.normalize();
     return v;
   }
